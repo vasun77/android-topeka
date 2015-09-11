@@ -23,7 +23,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterViewAnimator;
-import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -115,13 +114,16 @@ public class QuizFragment extends Fragment {
     }
 
     private void setProgress(int currentQuizPosition) {
+        if (!isAdded()) {
+            return;
+        }
         mProgressText
                 .setText(getString(R.string.quiz_of_quizzes, currentQuizPosition, mQuizSize));
         mProgressBar.setProgress(currentQuizPosition);
     }
 
     @SuppressWarnings("ConstantConditions")
-    private void setAvatarDrawable(ImageView avatarView) {
+    private void setAvatarDrawable(AvatarView avatarView) {
         Player player = PreferencesHelper.getPlayer(getActivity());
         avatarView.setImageResource(player.getAvatar().getDrawableId());
     }

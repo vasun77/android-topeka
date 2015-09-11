@@ -21,8 +21,10 @@ import android.app.ActivityOptions;
 import android.app.Fragment;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
+import android.support.v4.view.animation.FastOutSlowInInterpolator;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Pair;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -34,23 +36,23 @@ import com.google.samples.apps.topeka.R;
 import com.google.samples.apps.topeka.activity.CategorySelectionActivity;
 import com.google.samples.apps.topeka.adapter.AvatarAdapter;
 import com.google.samples.apps.topeka.helper.PreferencesHelper;
+import com.google.samples.apps.topeka.helper.TransitionHelper;
 import com.google.samples.apps.topeka.model.Avatar;
 import com.google.samples.apps.topeka.model.Player;
 import com.google.samples.apps.topeka.widget.fab.DoneFab;
 
 /**
- * Enables selection of an {@link Avatar} and user name.
+ * Enable selection of an {@link Avatar} and user name.
  */
 public class SignInFragment extends Fragment {
 
     private static final String ARG_EDIT = "EDIT";
-    private static final String KEY_FIRST_NAME = "firstName";
-    private static final String KEY_LAST_INITIAL = "lastInitial";
-    private static final String KEY_AVATAR_ID = "avatarId";
+    private static final String KEY_SELECTED_AVATAR_INDEX = "selectedAvatarIndex";
     private Player mPlayer;
     private EditText mFirstName;
     private EditText mLastInitial;
     private Avatar mSelectedAvatar = Avatar.ONE;
+    private View mSelectedAvatarView;
     private GridView mAvatarGrid;
     private DoneFab mDoneFab;
     private boolean edit;
@@ -61,6 +63,15 @@ public class SignInFragment extends Fragment {
         SignInFragment fragment = new SignInFragment();
         fragment.setArguments(args);
         return fragment;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        if (savedInstanceState != null) {
+            int savedAvatarIndex = savedInstanceState.getInt(KEY_SELECTED_AVATAR_INDEX);
+            mSelectedAvatar = Avatar.values()[savedAvatarIndex];
+        }
+        super.onCreate(savedInstanceState);
     }
 
     @Override
@@ -81,9 +92,8 @@ public class SignInFragment extends Fragment {
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
-        outState.putString(KEY_FIRST_NAME, mFirstName.getText().toString());
-        outState.putString(KEY_LAST_INITIAL, mLastInitial.getText().toString());
-        outState.putInt(KEY_AVATAR_ID, mAvatarGrid.getSelectedItemPosition());
+        outState.putInt(KEY_SELECTED_AVATAR_INDEX, mSelectedAvatar.ordinal());
+        super.onSaveInstanceState(outState);
     }
 
     @Override
@@ -97,8 +107,9 @@ public class SignInFragment extends Fragment {
             initContentViews(view);
             initContents();
         } else {
-            CategorySelectionActivity.start(getActivity(), mPlayer);
-            getActivity().finish();
+            final Activity activity = getActivity();
+            CategorySelectionActivity.start(activity, mPlayer);
+            activity.finish();
         }
         super.onViewCreated(view, savedInstanceState);
     }
@@ -117,22 +128,22 @@ public class SignInFragment extends Fragment {
         TextWatcher textWatcher = new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-        /* no-op */
+                /* no-op */
             }
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 // showing the floating action button if text is entered
-                if (count > 0) {
-                    mDoneFab.setVisibility(View.VISIBLE);
-                } else {
+                if (s.length() == 0) {
                     mDoneFab.setVisibility(View.GONE);
+                } else {
+                    mDoneFab.setVisibility(View.VISIBLE);
                 }
             }
 
             @Override
             public void afterTextChanged(Editable s) {
-        /* no-op */
+                /* no-op */
             }
         };
 
@@ -147,7 +158,17 @@ public class SignInFragment extends Fragment {
                 switch (v.getId()) {
                     case R.id.done:
                         savePlayer(getActivity());
-                        performSignInWithTransition(v);
+                        removeDoneFab(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (null == mSelectedAvatarView) {
+                                    performSignInWithTransition(mAvatarGrid.getChildAt(
+                                            mSelectedAvatar.ordinal()));
+                                } else {
+                                    performSignInWithTransition(mSelectedAvatarView);
+                                }
+                            }
+                        });
                         break;
                     default:
                         throw new UnsupportedOperationException(
@@ -158,26 +179,38 @@ public class SignInFragment extends Fragment {
         });
     }
 
+    private void removeDoneFab(@Nullable Runnable endAction) {
+        mDoneFab.animate()
+                .scaleX(0)
+                .scaleY(0)
+                .setInterpolator(new FastOutSlowInInterpolator())
+                .withEndAction(endAction)
+                .start();
+    }
+
     private void setUpGridView(View container) {
         mAvatarGrid = (GridView) container.findViewById(R.id.avatars);
         mAvatarGrid.setAdapter(new AvatarAdapter(getActivity()));
         mAvatarGrid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                mSelectedAvatarView = view;
                 mSelectedAvatar = Avatar.values()[position];
             }
         });
         mAvatarGrid.setNumColumns(calculateSpanCount());
+        mAvatarGrid.setItemChecked(mSelectedAvatar.ordinal(), true);
     }
 
 
     private void performSignInWithTransition(View v) {
-        Activity activity = getActivity();
+        final Activity activity = getActivity();
+
+        final Pair[] pairs = TransitionHelper.createSafeTransitionParticipants(activity, true,
+                new Pair<>(v, activity.getString(R.string.transition_avatar)));
         ActivityOptions activityOptions = ActivityOptions
-                .makeSceneTransitionAnimation(activity, v,
-                        activity.getString(R.string.transition_avatar));
+                .makeSceneTransitionAnimation(activity, pairs);
         CategorySelectionActivity.start(activity, mPlayer, activityOptions);
-        activity.finishAfterTransition();
     }
 
     private void initContents() {

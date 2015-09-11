@@ -37,8 +37,7 @@ import com.google.samples.apps.topeka.R;
 import com.google.samples.apps.topeka.activity.QuizActivity;
 import com.google.samples.apps.topeka.model.Category;
 import com.google.samples.apps.topeka.model.quiz.Quiz;
-import com.google.samples.apps.topeka.widget.fab.DoneFab;
-import com.google.samples.apps.topeka.widget.fab.FloatingActionButton;
+import com.google.samples.apps.topeka.widget.fab.CheckableFab;
 
 /**
  * This is the base class for displaying a {@link com.google.samples.apps.topeka.model.quiz.Quiz}.
@@ -54,8 +53,7 @@ import com.google.samples.apps.topeka.widget.fab.FloatingActionButton;
  * @param <Q> The type of {@link com.google.samples.apps.topeka.model.quiz.Quiz} you want to
  * display.
  */
-public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout implements
-        View.OnClickListener {
+public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout {
 
     /** Property for animating the foreground color */
     public static final Property<FrameLayout, Integer> FOREGROUND_COLOR =
@@ -88,7 +86,7 @@ public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout implements
     private final int mScaleAnimationDuration;
     private boolean mAnswered;
     private TextView mQuestionView;
-    private FloatingActionButton mSubmitAnswer;
+    private CheckableFab mSubmitAnswer;
 
     /**
      * Enables creation of views for quizzes.
@@ -179,17 +177,19 @@ public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout implements
         addView(mSubmitAnswer, fabLayoutParams);
     }
 
-    private FloatingActionButton getSubmitButton(Context context) {
+    private CheckableFab getSubmitButton(Context context) {
         if (null == mSubmitAnswer) {
-            mSubmitAnswer = new DoneFab(context);
+            mSubmitAnswer = new CheckableFab(context);
             mSubmitAnswer.setId(R.id.submitAnswer);
             mSubmitAnswer.setVisibility(GONE);
             mSubmitAnswer.setScaleY(0);
             mSubmitAnswer.setScaleX(0);
-            //Set QuizActivity to handle clicks on answer submission.
-            if (context instanceof QuizActivity) {
-                mSubmitAnswer.setOnClickListener(this);
-            }
+            mSubmitAnswer.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    submitAnswer(v);
+                }
+            });
         }
         return mSubmitAnswer;
     }
@@ -267,16 +267,6 @@ public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout implements
         }
     }
 
-    @Override
-    public void onClick(View v) {
-        switch (v.getId()) {
-            case R.id.submitAnswer: {
-                submitAnswer(v);
-                break;
-            }
-        }
-    }
-
     /**
      * Allows children to submit an answer via code.
      */
@@ -299,43 +289,70 @@ public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout implements
      */
     private void performScoreAnimation(final boolean answerCorrect) {
 
-        // Decide on the color and icon to use.
-        final int backgroundColor = getResources().getColor(answerCorrect ?
-                R.color.green : R.color.red);
-        final int imageResId = answerCorrect ? R.drawable.ic_done : R.drawable.ic_fail;
+        mSubmitAnswer.setChecked(answerCorrect);
 
+        // Decide which background color to use.
+        final int backgroundColor = getResources()
+                .getColor(answerCorrect ? R.color.green : R.color.red);
+        animateFabBackgroundColor(backgroundColor);
+        hideFab();
+        resizeView();
+        moveViewOffScreen(answerCorrect);
+        // Animate the foreground color to match the background color.
+        // This overlays all content within the current view.
+        animateForegroundColor(backgroundColor);
+    }
+
+    private void hideFab() {
+        mSubmitAnswer.animate()
+                .setDuration(mScaleAnimationDuration)
+                .setStartDelay(mIconAnimationDuration * 2)
+                .scaleX(0f)
+                .scaleY(0f)
+                .setInterpolator(mLinearOutSlowInInterpolator)
+                .start();
+    }
+
+    private void resizeView() {
+        final float widthHeightRatio = (float) getHeight() / (float) getWidth();
+
+        // Animate X and Y scaling separately to allow different start delays.
+        animate()
+                .scaleY(.5f / widthHeightRatio)
+                .setDuration(300)
+                .setStartDelay(750)
+                .start();
+        animate()
+                .scaleX(.5f)
+                .setDuration(300)
+                .setStartDelay(800)
+                .start();
+    }
+
+    private void animateFabBackgroundColor(int backgroundColor) {
         // Set color, duration and interpolator for the color change. Then start the animation.
         final ObjectAnimator fabColorAnimator = ObjectAnimator
                 .ofArgb(mSubmitAnswer, "backgroundColor", Color.WHITE, backgroundColor);
         fabColorAnimator.setDuration(mColorAnimationDuration)
                 .setInterpolator(mFastOutSlowInInterpolator);
         fabColorAnimator.start();
+    }
 
-        // Set duration and interpolator for the icon change. Then start the animation.
-        final ObjectAnimator iconAnimator = ObjectAnimator
-                .ofArgb(mSubmitAnswer, "imageResource", R.drawable.ic_done, imageResId);
-        iconAnimator.setDuration(mIconAnimationDuration)
-                .setInterpolator(mFastOutSlowInInterpolator);
-        iconAnimator.start();
-
-        // Hide the FAB.
-        mSubmitAnswer.animate()
-                .setDuration(mScaleAnimationDuration)
-                .setStartDelay(mIconAnimationDuration * 2)
-                .scaleX(0f)
-                .scaleY(0f)
+    private void animateForegroundColor(int targetColor) {
+        final ObjectAnimator foregroundAnimator = ObjectAnimator
+                .ofArgb(this, FOREGROUND_COLOR, Color.WHITE, targetColor);
+        foregroundAnimator
+                .setDuration(200)
                 .setInterpolator(mLinearOutSlowInInterpolator);
+        foregroundAnimator.setStartDelay(750);
+        foregroundAnimator.start();
+    }
 
-        // Prepare for take off.
-        final float widthHeightRatio = (float) getHeight() / (float) getWidth();
-        setElevation(getResources().getDimension(R.dimen.elevation_header));
-
+    private void moveViewOffScreen(final boolean answerCorrect) {
         // Animate the current view off the screen.
-        animate().
-                setDuration(500)
-                .setStartDelay(750)
-                .scaleX(.5f)
-                .scaleY(.5f / widthHeightRatio)
+        animate()
+                .setDuration(200)
+                .setStartDelay(1200)
                 .setInterpolator(mLinearOutSlowInInterpolator)
                 .withEndAction(new Runnable() {
                     @Override
@@ -345,17 +362,8 @@ public abstract class AbsQuizView<Q extends Quiz> extends FrameLayout implements
                             ((QuizActivity) getContext()).proceed();
                         }
                     }
-                });
-
-        // Animate the foreground color to match the background color.
-        // This overlays all content within the current view.
-        final ObjectAnimator foregroundAnimator = ObjectAnimator
-                .ofArgb(this, FOREGROUND_COLOR, Color.WHITE, backgroundColor);
-        foregroundAnimator.setDuration(200)
-                .setInterpolator(mLinearOutSlowInInterpolator);
-        foregroundAnimator.setStartDelay(750);
-        foregroundAnimator.start();
-
+                })
+                .start();
     }
 
     private void setMinHeightInternal(View view, @DimenRes int resId) {
